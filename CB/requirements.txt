@@ -1,8 +1,0 @@
-# Core dependencies for model.py and testing.py
-openai>=1.0.0
-
-# Dependencies for API server (api_server.py)
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-pydantic==2.5.0
-

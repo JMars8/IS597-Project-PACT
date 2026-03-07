@@ -1,67 +1,15 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
-.vscode/*
-# Dependency directories
+# Build / deps
 node_modules/
-bower_components/
-
-# Build output
 dist/
-build/
+modules/
 
-# OS-specific files
+# OS / editor
 .DS_Store
 Thumbs.db
-
-# firebase
-.firebase/
-.firebaserc/
-
-# local env files
-.env.local
-.env.*.local
-.env
-
-# Log files
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-# Editor directories and files
 .idea/
 .vscode/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
 
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+# Local env
 .env
-
-# API keys - do not commit
-**/api
-api
-backend/api
-CB/api
+.env.*
+*.local
