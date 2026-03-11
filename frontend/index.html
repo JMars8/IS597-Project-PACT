@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PACT | Private LLM Workspace</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="logo-container">
+            <div style="width: 32px; height: 32px; background: linear-gradient(45deg, var(--accent-cyan), var(--accent-purple)); border-radius: 8px;"></div>
+            <h1>PACT</h1>
+        </div>
+        
+        <div class="privacy-controls">
+            <h2 style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);">Privacy Configuration</h2>
+            
+            <div class="control-item">
+                <div class="control-label">
+                    <span>Identity & PII</span>
+                    <small>Names, SSN, Emails</small>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="toggle-identity">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="control-item">
+                <div class="control-label">
+                    <span>Location & Geo</span>
+                    <small>Addresses, Cities, GPS</small>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="toggle-location">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="control-item">
+                <div class="control-label">
+                    <span>Demographics</span>
+                    <small>Nationality, Attributes</small>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="toggle-demographic">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="control-item">
+                <div class="control-label">
+                    <span>Health & Medical</span>
+                    <small>Clinical data, Records</small>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="toggle-health">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="control-item">
+                <div class="control-label">
+                    <span>Financial</span>
+                    <small>Cards, Bank Info, Money</small>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="toggle-financial" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+        </div>
+
+        <div style="margin-top: auto; padding-top: 2rem; border-top: 1px solid var(--glass-border);">
+            <p style="font-size: 0.75rem; color: var(--text-muted);">
+                PACT ensures that raw sensitive data stays on your device. Only sanitized prompts reach the cloud.
+            </p>
+        </div>
+    </aside>
+
+    <main class="chat-container">
+        <header class="chat-header">
+            <h2 style="font-size: 1.1rem;">Privacy-Aware Assistant</h2>
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--accent-cyan);">
+                <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--accent-cyan);"></div>
+                Llama 3 Local Sanitizer Active
+            </div>
+        </header>
+
+        <div class="chat-messages" id="chat-messages">
+            <div class="message bot-message">
+                Hello! I'm PACT. How can I help you today? I'll automatically sanitize your prompt based on the settings in the sidebar before sending it to the cloud LLM.
+            </div>
+        </div>
+
+        <div class="chat-input-area">
+            <div class="input-wrapper">
+                <textarea id="user-input" placeholder="Type your message here... (e.g. My bank account number is...)" rows="1"></textarea>
+                <button id="send-btn">Send</button>
+            </div>
+            <p style="text-align: center; font-size: 0.7rem; color: var(--text-muted); margin-top: 1rem;">
+                Powered by spaCy & AU-Probe Uncertainty Logic
+            </p>
+        </div>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
