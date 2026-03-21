@@ -86,7 +86,8 @@ function updateMessage(id, text, sanitizations = []) {
         
         let html = '<strong>Privacy Actions:</strong><ul style="margin-left: 15px; margin-top: 4px;">';
         sanitizations.forEach(s => {
-            html += `<li>Redacted financial info: <span style="color: var(--accent-cyan);">${s.original}</span> → [REDACTED]</li>`;
+            const type = s.type || 'SENSITIVE';
+            html += `<li>Redacted ${type} info: <span style="color: var(--accent-cyan);">${s.original}</span> → [REDACTED]</li>`;
         });
         html += '</ul>';
         sanitizationList.innerHTML = html;

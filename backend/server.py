@@ -5,9 +5,10 @@ import uvicorn
 import sys
 import os
 
-# Import our financial detector
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+# Import our detectors
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from modules.financial_detector import FinancialDetector
+from modules.geo_detector import GeoDetector
 
 app = FastAPI()
 
@@ -31,19 +32,26 @@ class ChatRequest(BaseModel):
     settings: ChatSettings
 
 financial_detector = FinancialDetector()
+geo_detector = GeoDetector()
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     query = request.query
     sanitizations = []
     
-    # 1. Privacy Processing (Focus on Financial for now)
+    # 1. Privacy Processing - Financial
     if request.settings.financial:
         processed_query, financial_logs = financial_detector.detect_and_redact(query)
         query = processed_query
         sanitizations.extend(financial_logs)
+
+    # 2. Privacy Processing - Geo (GPE, LOC, FAC)
+    if request.settings.location:
+        processed_query, geo_logs = geo_detector.detect_and_redact(query)
+        query = processed_query
+        sanitizations.extend(geo_logs)
     
-    # 2. Mock LLM Synthesis (Placeholder for Llama)
+    # 3. Mock LLM Synthesis (Placeholder for Llama)
     # In a real scenario, the 'query' here is already sanitized.
     response_text = f"As a privacy-focused assistant, I've received your request. "
     if sanitizations:
