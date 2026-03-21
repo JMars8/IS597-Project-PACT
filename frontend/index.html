@@ -100,7 +100,10 @@
         <div class="chat-input-area">
             <div class="input-wrapper">
                 <textarea id="user-input" placeholder="Type your message here... (e.g. My bank account number is...)" rows="1"></textarea>
-                <button id="send-btn">Send</button>
+                <button type="button" id="send-btn">Send</button>
+            </div>
+            <div class="input-actions">
+                <button type="button" id="batch-from-file-btn" title="Runs every query in data/queries.json on the server">Run data/queries.json</button>
             </div>
             <p style="text-align: center; font-size: 0.7rem; color: var(--text-muted); margin-top: 1rem;">
                 Powered by spaCy & AU-Probe Uncertainty Logic
@@ -108,6 +111,6 @@
         </div>
     </main>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=3"></script>
 </body>
 </html>
