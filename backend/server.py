@@ -1,9 +1,26 @@
+import sys
+
+# spaCy (and its dependencies via pydantic v1/confection) is not compatible with
+# Python 3.14+ in this project. If you run this with the project's `.venv`
+# (Python 3.14), startup will crash.
+#
+# Use Conda `base` (or another Python 3.11/3.12 environment) instead.
+if sys.version_info >= (3, 14):
+    sys.stderr.write(
+        "\nERROR: Python 3.14+ is not supported for this PACT backend.\n"
+        "You appear to be using Python {}.{}.{}.\n\n"
+        "Fix:\n"
+        "  1) deactivate .venv\n"
+        "  2) conda activate base\n"
+        "  3) python3 backend/server.py\n\n"
+    ).format(*sys.version_info[:3])
+    raise SystemExit(1)
+
+import os
+import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import uvicorn
-import sys
-import os
 
 # Import our detectors
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))

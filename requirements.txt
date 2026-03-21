@@ -1,4 +1,9 @@
-spacy>=3.7.0
+spacy>=3.8.2,<3.9
+
+# US street-address NER model from NickCrews/spacy-address.
+# The project publishes installable model wheels (not a PyPI package named `spacy-address`).
+en-us-address-ner-sm @ https://github.com/NickCrews/spacy-address/releases/download/20241029-205717-sm/en_us_address_ner_sm-0.0.0-py3-none-any.whl
+
 fastapi
 uvicorn
 python-multipart
