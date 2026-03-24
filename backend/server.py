@@ -168,6 +168,7 @@ async def local_llama_status():
 
 @app.post("/local-llama/load")
 async def local_llama_load(req: LocalLlamaLoadRequest | None = None):
+    global _local_llama_loading, _local_llama_load_error
     # Keep model_name optional so frontend can just "poke" the loader.
     model_name = LOCAL_LLM_MODEL_NAME
     if req and req.model_name:
