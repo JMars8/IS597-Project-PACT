@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 import uvicorn
 import sys
@@ -39,7 +40,8 @@ def _require_env(name: str) -> str:
 # We no longer require HF_API_KEY because local Llama runs on the machine.
 # (If your llama wrapper needs an HF token, it will use HF_TOKEN/HUGGING_FACE_HUB_TOKEN
 # or hg.txt/hg files as implemented in llama_model.py.)
-GPT_API_KEY = _require_env("GPT_API_KEY")
+# Recommended: set this via the OPENAI_API_KEY environment variable.
+GPT_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
 GPT_MODEL_ID = "gpt-4o-mini"
 
@@ -314,7 +316,7 @@ def _local_synthesize_final_prompt(
             max_new_tokens=128,
             temperature=0.2,
             top_p=0.9,
-            model_name=LOCAL_LLM_MODEL_NAME,
+            model_name=local_llama.OLLAMA_MODEL,
             use_chat_template=True,
         )
     except Exception as e:
@@ -436,6 +438,10 @@ async def chat_batch_from_file():
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     return _process_chat(request)
+
+# Serve frontend static files - keep this as the final route
+app.mount("/", StaticFiles(directory=os.path.join(ROOT_DIR, 'frontend'), html=True), name="frontend")
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
