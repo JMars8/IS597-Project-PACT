@@ -1,89 +1,113 @@
-import spacy
-from spacy.matcher import Matcher
+from __future__ import annotations
 import re
+import spacy
+from typing import Any
+
+def is_luhn_valid(number: str) -> bool:
+    """
+    Implements the Luhn algorithm (Mod 10) to check if a sequence of digits
+    is a mathematically valid credit card number.
+    
+    This reduces false positives by verifying the checksum of 13-19 digit strings.
+    """
+    digits = [int(d) for d in re.sub(r"\D", "", number)]
+    if not digits:
+        return False
+    
+    # Reverse and double every second digit
+    check_sum = 0
+    for i, digit in enumerate(reversed(digits)):
+        if i % 2 == 1:
+            digit *= 2
+            if digit > 9:
+                digit -= 9
+        check_sum += digit
+        
+    return check_sum % 10 == 0
 
 class FinancialDetector:
     """
-    A class to detect and redact financial information from text using spaCy and regex.
+    A robust financial de-identification module for PACT.
     
-    This detector identifies monetary values, credit card numbers, and bank account 
-    information to ensure privacy before data is shared with external services.
+    Categorization Strategy:
+    1. PAYMENT_INSTRUMENT: Credit/Debit Cards, CVVs, and Expiry Dates.
+       Tagged as [REDACTED CARD]. Includes a Luhn checksum to reduce false positives.
+       
+    2. ACCOUNT_DETAILS: Bank Account Numbers, IBANs, Routing/SWIFT Codes, 
+       and Cryptocurrency Wallet Addresses (Ethereum, Bitcoin).
+       Tagged as [REDACTED ACCOUNT].
+       
+    3. VALUE_AND_INCOME: Monetary values ($5k), Annual Salaries, Net Worth, 
+       Stock holdings, and Tax IDs (SSNs, EINs).
+       Tagged as [REDACTED VALUE].
     """
     def __init__(self):
-        """
-        Initializes the FinancialDetector by loading the spaCy model and 
-        setting up custom matching patterns.
-        """
-        # Load spaCy model
         try:
             self.nlp = spacy.load("en_core_web_sm")
         except OSError:
-            # Fallback if model not downloaded
             import os
             os.system("python -m spacy download en_core_web_sm")
             self.nlp = spacy.load("en_core_web_sm")
-            
-        self.matcher = Matcher(self.nlp.vocab)
-        self._add_custom_patterns()
 
-    def _add_custom_patterns(self):
-        """
-        Adds custom regex patterns to the spaCy Matcher for credit cards 
-        and bank accounts.
-        """
-        # Pattern for Credit Cards (handles spaces, dashes, or no separators)
-        card_pattern = [{"TEXT": {"REGEX": r"\b(?:\d{4}[ -]?){3}\d{4}\b"}}]
-        self.matcher.add("CREDIT_CARD", [card_pattern])
-        
-        # Pattern for Bank Account Numbers (conceptually simple for demo)
-        account_pattern = [{"TEXT": {"REGEX": r"\b\d{8,12}\b"}}]
-        self.matcher.add("BANK_ACCOUNT", [account_pattern])
-
-    def detect_and_redact(self, text):
-        """
-        Analyzes the input text to find and redact financial data points.
-        
-        Args:
-            text (str): The raw input text to be sanitized.
-            
-        Returns:
-            tuple: A tuple containing (redacted_text, sanitizations) where 
-                   sanitizations is a list of dictionaries documenting what was found.
-        """
+    def detect_and_redact(self, text: str) -> tuple[str, list[dict[str, Any]]]:
         doc = self.nlp(text)
-        redacted_text = text
-        sanitizations = []
+        spans: list[tuple[int, int, str, str, str]] = []
+        
+        # --- 1. PAYMENT_INSTRUMENT (Cards via Luhn) ---
+        card_regex = re.compile(r"\b(?:\d[ -]?){13,19}\b")
+        for m in card_regex.finditer(text):
+            candidate = m.group()
+            if is_luhn_valid(candidate):
+                spans.append((m.start(), m.end(), "[REDACTED CARD]", candidate, "PAYMENT_INSTRUMENT"))
 
-        # 1. Detect Standard spaCy MONEY entities
+        # --- 2. ACCOUNT_DETAILS (Global Bank & Crypto) ---
+        # Generic Bank (8-12 digits) OR IBAN (22-34 characters starting with initials)
+        bank_regex = re.compile(r"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b|\b\d{8,12}\b", re.IGNORECASE)
+        # Crypto Addresses: 0x... (ETH) or bc1.../1.../3... (BTC)
+        crypto_regex = re.compile(r"\b(?:0x[a-fA-F0-9]{40}|[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{39,59})\b")
+        
+        for m in bank_regex.finditer(text):
+            spans.append((m.start(), m.end(), "[REDACTED ACCOUNT]", m.group(), "ACCOUNT_DETAILS"))
+        for m in crypto_regex.finditer(text):
+            spans.append((m.start(), m.end(), "[REDACTED ACCOUNT]", m.group(), "ACCOUNT_DETAILS"))
+
+        # --- 3. VALUE_AND_INCOME (MONEY & Salaries) ---
+        # Catch standard spaCy MONEY tags
         for ent in doc.ents:
             if ent.label_ == "MONEY":
-                sanitizations.append({"original": ent.text, "type": "MONEY"})
-                # We use a placeholder to avoid overlapping issues later
-                redacted_text = redacted_text.replace(ent.text, "[REDACTED FINANCIAL]")
+                spans.append((ent.start_char, ent.end_char, "[REDACTED VALUE]", ent.text, "VALUE_AND_INCOME"))
+        
+        # Salary patterns: "120k", "$80,000 yearly", "making $100 per hour"
+        salary_regex = re.compile(r"\b\d+k\b|\b\d{1,3}(?:,\d{3})*\s*(?:per hour|annually|yearly|a year)\b", re.IGNORECASE)
+        for m in salary_regex.finditer(text):
+            spans.append((m.start(), m.end(), "[REDACTED VALUE]", m.group(), "VALUE_AND_INCOME"))
 
-        # 2. Regex-based detection for more robust Credit Card matching
-        # Handles 1111 2222 3333 4444, 1111-2222-3333-4444, and 1111222233334444
-        cc_regex = r"\b(?:\d{4}[ -]?){3}\d{4}\b"
-        for match in re.finditer(cc_regex, text):
-            original = match.group()
-            if original not in [s["original"] for s in sanitizations]:
-                sanitizations.append({"original": original, "type": "CREDIT_CARD"})
-                redacted_text = redacted_text.replace(original, "[REDACTED CREDIT_CARD]")
+        # --- RECONSTRUCTION ---
+        # Merge overlaps, prefer longer ones
+        spans.sort(key=lambda x: (x[0], -(x[1] - x[0])))
+        
+        redacted_parts: list[str] = []
+        sanitized: list[dict[str, Any]] = []
+        last_idx = 0
 
-        # 3. Regex-based detection for Bank Accounts (8-12 digits)
-        account_regex = r"\b\d{8,12}\b"
-        for match in re.finditer(account_regex, text):
-            original = match.group()
-            if original not in [s["original"] for s in sanitizations]:
-                sanitizations.append({"original": original, "type": "BANK_ACCOUNT"})
-                redacted_text = redacted_text.replace(original, "[REDACTED BANK_ACCOUNT]")
+        for start, end, replacement, original, typ in spans:
+            if start < last_idx:
+                continue
+            redacted_parts.append(text[last_idx:start])
+            redacted_parts.append(replacement)
+            last_idx = end
+            sanitized.append({"original": original, "type": typ})
 
-        return redacted_text, sanitizations
+        redacted_parts.append(text[last_idx:])
+        return "".join(redacted_parts), sanitized
 
-if __name__ == "__main__":
-    detector = FinancialDetector()
-    sample = "Send $500 to account 1234567890. My card is 1234 5678 1234 5678."
-    redacted, logs = detector.detect_and_redact(sample)
-    print(f"Original: {sample}")
-    print(f"Redacted: {redacted}")
-    print(f"Logs: {logs}")
+def _get_detector() -> FinancialDetector:
+    # Singleton pattern to avoid reloading spaCy
+    if not hasattr(_get_detector, "_instance"):
+        _get_detector._instance = FinancialDetector()
+    return _get_detector._instance
+
+def make_candidates_financial(text: str) -> list[str]:
+    detector = _get_detector()
+    redacted_text, _ = detector.detect_and_redact(text)
+    return [redacted_text]

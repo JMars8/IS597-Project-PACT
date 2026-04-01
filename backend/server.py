@@ -40,7 +40,7 @@ def _require_env(name: str) -> str:
 # We no longer require HF_API_KEY because local Llama runs on the machine.
 # (If your llama wrapper needs an HF token, it will use HF_TOKEN/HUGGING_FACE_HUB_TOKEN
 # or hg.txt/hg files as implemented in llama_model.py.)
-# Recommended: set this via the OPENAI_API_KEY environment variable.
+# Set this via the OPENAI_API_KEY environment variable.
 GPT_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
 GPT_MODEL_ID = "gpt-4o-mini"
