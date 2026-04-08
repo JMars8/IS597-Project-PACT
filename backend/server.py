@@ -96,6 +96,9 @@ def _background_load_local_llama(model_name: str) -> None:
     global _local_llama_loading, _local_llama_load_error
     try:
         local_llama.load_model(model_name=model_name)
+        probe_path = os.path.abspath(os.path.join(ROOT_DIR, "..", "AU-Med", "hidden_states", "probe_results", "meta-llama", "Llama-3.1-8B-Instruct", "probe_weights", "linearprobe_layer_32.pt"))
+        local_llama.load_au_probe(probe_path, layer=32)
+        
         with _local_llama_state_lock:
             _local_llama_load_error = None
             _local_llama_loading = False
@@ -238,7 +241,21 @@ def _process_chat(request: ChatRequest) -> dict:
         financial_candidate=financial_candidate,
     )
 
-    response_text = _cloud_llm(final_prompt)
+    au_score = 0.0
+    if USE_LOCAL_LLAMA_FOR_SYNTHESIS:
+        try:
+            au_score = local_llama.get_au_uncertainty(final_prompt)
+        except Exception as e:
+            print(f"AU Uncertainty calculation failed: {e}")
+            au_score = 0.0
+
+    if au_score >= 0.5:
+        response_text = (
+            f"The uncertainty score is {au_score:.2f}. It is likely that LLM will give you uncertain "
+            f"response as well. I suggest you including more specific details or context for better answer."
+        )
+    else:
+        response_text = _cloud_llm(final_prompt)
 
     pipeline_trace = {
         "module_masks": module_masks,
@@ -285,6 +302,18 @@ def _local_synthesize_final_prompt(
     privacy_preferences: dict,
     financial_candidate: str | None = None,
 ) -> tuple[str, dict]:
+    if len(candidates) == 1 and candidates[0].strip() == original_query.strip():
+        trace = {
+            "synthesis_mode": "bypass",
+            "model_name": None,
+            "synthesis_prompt": "",
+            "raw_model_output": "",
+            "extracted_before_fallback": original_query,
+            "used_fallback": False,
+            "fallback_reason": "no_masking_needed_or_all_toggles_off",
+        }
+        return original_query.strip(), trace
+
     prompt = build_privacy_synthesis_prompt(
         original_query, candidates, privacy_preferences
     )

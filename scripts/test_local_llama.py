@@ -92,8 +92,16 @@ def case_synthesis(
     print("\nextract_final_prompt() ->\n", repr(extracted))
     print("is_synthesis_unusable ->", is_synthesis_unusable(extracted))
 
-
-
+    _divider("CASE: AU Uncertainty Test (Forward Pass)")
+    try:
+        from pathlib import Path
+        probe_path = Path(ROOT).parent / "AU-Med" / "hidden_states" / "probe_results" / "meta-llama" / "Llama-3.1-8B-Instruct" / "probe_weights" / "linearprobe_layer_32.pt"
+        abs_probe_path = str(probe_path.resolve())
+        local_llama.load_au_probe(abs_probe_path, layer=32)
+        score = local_llama.get_au_uncertainty(extracted, model_name=model_name, use_chat_template=use_chat_template)
+        print(f"AU Uncertainty Score for final_prompt: {score:.4f}")
+    except Exception as e:
+        print(f"Failed to calculate AU uncertainty: {type(e).__name__} - {e}")
 
 def case_modules_only(query: str, prefs: dict) -> None:
     """Run spaCy/detector pipeline only; no GPU Llama (fast sanity check)."""
