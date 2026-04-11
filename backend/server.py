@@ -10,6 +10,10 @@ import json
 import requests
 import threading
 import time
+from dotenv import load_dotenv
+
+# Load .env file at startup
+load_dotenv()
 
 # Import our financial detector
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -218,6 +222,7 @@ class ChatRequest(BaseModel):
     query: str
     settings: ChatSettings
     is_document: bool = False
+    api_key: str | None = None
 
 
 class BatchChatRequest(BaseModel):
@@ -255,7 +260,16 @@ def _process_chat(request: ChatRequest) -> dict:
             financial_candidate=financial_candidate,
         )
 
-    response_text = _cloud_llm(final_prompt)
+    # Use the key from UI if provided, otherwise fallback to environment
+    # We allow any non-empty string here; the length check happens in _cloud_llm
+    ui_key = request.api_key.strip() if (request.api_key and request.api_key.strip()) else None
+    active_key = ui_key if ui_key else GPT_API_KEY
+    
+    # DEBUG: Help the user see what the server is actually receiving (masking for safety)
+    masked_key = (active_key[:4] + "..." + active_key[-4:]) if len(active_key) > 8 else "too short"
+    print(f"DEBUG: Processing request. UI Key provided: {bool(ui_key)}, Final Key Mask: {masked_key}, Source: {'UI' if ui_key else 'ENV/DOTENV'}")
+    
+    response_text = _cloud_llm(final_prompt, api_key_override=active_key)
 
     pipeline_trace = {
         "module_masks": module_masks,
@@ -380,13 +394,19 @@ def _local_synthesize_final_prompt(
     return final_prompt, trace
 
 
-def _cloud_llm(final_prompt: str) -> str:
+def _cloud_llm(final_prompt: str, api_key_override: str | None = None) -> str:
     """
     Cloud GPT: chatbot-like response based only on final_prompt.
     """
+    # Prefer explicitly passed key from UI sidebar
+    actual_key = api_key_override or GPT_API_KEY
+    
+    if not actual_key or len(actual_key.strip()) < 10:
+        return "Error: No OpenAI API Key provided. Please enter one in the sidebar or set it in your .env file."
+
     url = "https://api.openai.com/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {GPT_API_KEY}",
+        "Authorization": f"Bearer {actual_key.strip()}",
         "Content-Type": "application/json",
     }
     payload = {
@@ -453,13 +473,23 @@ async def chat_batch_endpoint(body: BatchChatRequest):
     return {"count": len(results), "results": results}
 
 
+class BatchKeyRequest(BaseModel):
+    api_key: str | None = None
+
 @app.post("/chat/batch-from-file")
-async def chat_batch_from_file():
+async def chat_batch_from_file(req: BatchKeyRequest | None = None):
     """Load queries from data/queries.json and run the /chat pipeline for each."""
     doc = _load_queries_document()
     parsed = QueriesFile.model_validate(doc)
     results = []
+    
+    # Extract key if provided
+    api_key = req.api_key if req else None
+
     for i, item in enumerate(parsed.queries):
+        # Override the individual query's key with the one from the batch request if present
+        if api_key:
+            item.api_key = api_key
         out = _process_chat(item)
         out["index"] = i
         results.append(out)

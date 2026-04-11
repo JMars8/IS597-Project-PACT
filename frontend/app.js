@@ -7,6 +7,19 @@ const fileInput = document.getElementById('file-input');
 const attachmentPreview = document.getElementById('attachment-preview');
 const attachedFilename = document.getElementById('attached-filename');
 const removeAttachmentBtn = document.getElementById('remove-attachment');
+const apiKeyInput = document.getElementById('api-key-input');
+const testKeyBtn = document.getElementById('test-key-btn');
+const keyStatus = document.getElementById('key-status');
+
+// Load saved API key from session storage
+if (apiKeyInput) {
+    const savedKey = sessionStorage.getItem('pact_openai_key');
+    if (savedKey) {
+        apiKeyInput.value = savedKey;
+        updateKeyStatus('active', '✅');
+        console.log("DEBUG: Restored API key from session storage.");
+    }
+}
 const llamaStatusBadge = document.getElementById('llama-status-badge');
 const llamaStatusDot = document.getElementById('llama-status-dot');
 const llamaStatusText = document.getElementById('llama-status-text');
@@ -50,9 +63,18 @@ async function sendMessage() {
 
     try {
         // Prepare request body
+        const keyEl = document.getElementById('api-key-input');
+        let userApiKey = keyEl ? keyEl.value.trim() : null;
+        
+        // Fallback to session storage if the input exists but is empty
+        if (!userApiKey) {
+            userApiKey = sessionStorage.getItem('pact_openai_key');
+        }
+        
         const payload = {
             query: fullQuery,
             is_document: !!currentAttachmentText,
+            api_key: userApiKey,
             settings: {
                 identity: toggles.identity.checked,
                 location: toggles.location.checked,
@@ -61,6 +83,12 @@ async function sendMessage() {
                 financial: toggles.financial.checked
             }
         };
+
+        console.log("DEBUG: Sending payload to /chat", {
+            query_length: payload.query.length,
+            has_api_key: !!payload.api_key,
+            api_key_length: payload.api_key ? payload.api_key.length : 0
+        });
 
         const response = await fetch('http://localhost:8000/chat', {
             method: 'POST',
@@ -184,9 +212,18 @@ async function runBatchFromFile() {
     const botMsgId = appendMessage('bot', 'Loading queries from JSON and sanitizing…');
 
     try {
+        const keyEl = document.getElementById('api-key-input');
+        let userApiKey = keyEl ? keyEl.value.trim() : null;
+        if (!userApiKey) {
+            userApiKey = sessionStorage.getItem('pact_openai_key');
+        }
+
         const response = await fetch('http://localhost:8000/chat/batch-from-file', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                api_key: userApiKey
+            })
         });
         const data = await response.json().catch(() => null);
         if (!response.ok) {
@@ -238,6 +275,46 @@ sendBtn.addEventListener('click', sendMessage);
 batchFromFileBtn.addEventListener('click', runBatchFromFile);
 
 attachDocBtn.addEventListener('click', () => fileInput.click());
+
+// API Key Helpers
+function updateKeyStatus(mode, icon) {
+    const keyStatus = document.getElementById('key-status');
+    if (!keyStatus) return;
+    if (mode === 'active') {
+        keyStatus.textContent = icon + ' active';
+        keyStatus.style.color = '#22d3ee'; // var(--accent-cyan)
+        keyStatus.style.fontWeight = 'bold';
+    } else if (mode === 'error') {
+        keyStatus.textContent = icon + ' invalid';
+        keyStatus.style.color = '#ff6b6b';
+        keyStatus.style.fontWeight = 'bold';
+    } else {
+        keyStatus.textContent = '';
+    }
+}
+
+if (apiKeyInput) {
+    apiKeyInput.addEventListener('input', () => {
+        const val = apiKeyInput.value.trim();
+        if (val) {
+            sessionStorage.setItem('pact_openai_key', val);
+            updateKeyStatus('active', '•');
+        } else {
+            sessionStorage.removeItem('pact_openai_key');
+            updateKeyStatus('empty', '');
+        }
+    });
+
+    apiKeyInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            const val = apiKeyInput.value.trim();
+            if (val) {
+                updateKeyStatus('active', '✅');
+                apiKeyInput.blur();
+            }
+        }
+    });
+}
 
 fileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
