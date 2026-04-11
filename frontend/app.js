@@ -2,6 +2,17 @@ const chatMessages = document.getElementById('chat-messages');
 const userInput = document.getElementById('user-input');
 const sendBtn = document.getElementById('send-btn');
 const batchFromFileBtn = document.getElementById('batch-from-file-btn');
+const attachDocBtn = document.getElementById('attach-doc-btn');
+const fileInput = document.getElementById('file-input');
+const attachmentPreview = document.getElementById('attachment-preview');
+const attachedFilename = document.getElementById('attached-filename');
+const removeAttachmentBtn = document.getElementById('remove-attachment');
+const llamaStatusBadge = document.getElementById('llama-status-badge');
+const llamaStatusDot = document.getElementById('llama-status-dot');
+const llamaStatusText = document.getElementById('llama-status-text');
+
+let currentAttachmentText = "";
+let currentAttachmentName = "";
 
 // Toggles
 const toggles = {
@@ -18,13 +29,19 @@ userInput.addEventListener('input', () => {
     userInput.style.height = (userInput.scrollHeight) + 'px';
 });
 
-// Send message logic
 async function sendMessage() {
-    const text = userInput.value.trim();
-    if (!text) return;
+    let text = userInput.value.trim();
+    if (!text && !currentAttachmentText) return;
 
-    // Add user message to UI
-    appendMessage('user', text);
+    // Combine document and question if attachment exists
+    let fullQuery = text;
+    if (currentAttachmentText) {
+        fullQuery = `[Document Content: ${currentAttachmentName}]\n${currentAttachmentText}\n\n[User Question]: ${text}`;
+    }
+
+    // Add user message to UI (show a shorter version if it's a huge doc)
+    const displayMessage = currentAttachmentName ? `📎 ${currentAttachmentName}\n${text}` : text;
+    appendMessage('user', displayMessage);
     userInput.value = '';
     userInput.style.height = 'auto';
 
@@ -34,7 +51,8 @@ async function sendMessage() {
     try {
         // Prepare request body
         const payload = {
-            query: text,
+            query: fullQuery,
+            is_document: !!currentAttachmentText,
             settings: {
                 identity: toggles.identity.checked,
                 location: toggles.location.checked,
@@ -60,9 +78,12 @@ async function sendMessage() {
         updateMessage(
             botMsgId,
             data.response,
-            data.sanitizations,
+            data.sanitizations || [],
             data.pipeline_trace || null
         );
+
+        // Clear attachment after successful send
+        clearAttachment();
 
     } catch (error) {
         console.error('Error:', error);
@@ -215,6 +236,59 @@ async function runBatchFromFile() {
 
 sendBtn.addEventListener('click', sendMessage);
 batchFromFileBtn.addEventListener('click', runBatchFromFile);
+
+attachDocBtn.addEventListener('click', () => fileInput.click());
+
+fileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const originalPlaceholder = userInput.placeholder;
+    userInput.placeholder = "Reading attachment...";
+    userInput.disabled = true;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const response = await fetch('http://localhost:8000/extract/text', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+            alert(data.detail || "Extraction failed");
+            return;
+        }
+
+        // Store internally, don't show all text in box
+        currentAttachmentText = data.text;
+        currentAttachmentName = file.name;
+        
+        // Show the badge
+        attachedFilename.textContent = `Attached: ${file.name}`;
+        attachmentPreview.style.display = 'block';
+        userInput.placeholder = "Ask a question about this attachment...";
+        userInput.focus();
+        
+    } catch (error) {
+        console.error('Extraction Error:', error);
+        alert("Failed to extract document text.");
+    } finally {
+        userInput.disabled = false;
+        fileInput.value = '';
+    }
+});
+
+function clearAttachment() {
+    currentAttachmentText = "";
+    currentAttachmentName = "";
+    attachmentPreview.style.display = 'none';
+    userInput.placeholder = "Type your message here...";
+}
+
+removeAttachmentBtn.addEventListener('click', clearAttachment);
 userInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -234,9 +308,33 @@ userInput.addEventListener('keydown', (e) => {
 
     const msgId = appendMessage('bot', 'Local Llama: loading…');
 
-    const setText = (t) => {
+    const setText = (t, status = 'loading') => {
         const el = document.getElementById(msgId);
         if (el) el.textContent = t;
+        
+        if (status === 'ready') {
+            setHeaderStatus('ready', 'Llama 3 Local Sanitizer Active');
+        } else if (status === 'error') {
+            setHeaderStatus('error', 'Llama 3 Unavailable');
+        } else {
+            setHeaderStatus('loading', 'Llama 3 Loading...');
+        }
+    };
+
+    const setHeaderStatus = (status, text) => {
+        if (!llamaStatusBadge) return;
+        llamaStatusText.textContent = text;
+        llamaStatusBadge.style.opacity = "1";
+        if (status === 'ready') {
+            llamaStatusDot.style.background = "var(--accent-cyan)";
+            llamaStatusBadge.style.color = "var(--accent-cyan)";
+        } else if (status === 'loading') {
+            llamaStatusDot.style.background = "#fbbf24";
+            llamaStatusBadge.style.color = "#fbbf24";
+        } else {
+            llamaStatusDot.style.background = "#ef4444";
+            llamaStatusBadge.style.color = "#ef4444";
+        }
     };
 
     const fmtElapsed = () => {
@@ -251,7 +349,7 @@ userInput.addEventListener('keydown', (e) => {
             const st = await statusResp.json().catch(() => ({}));
 
             if (st.loaded) {
-                setText('Local Llama: ready.');
+                setText('Local Llama: ready.', 'ready');
                 return;
             }
 
@@ -264,7 +362,7 @@ userInput.addEventListener('keydown', (e) => {
             }
 
             if (st.load_error) {
-                setText(`Local Llama: failed to load: ${st.load_error}`);
+                setText(`Local Llama: failed to load: ${st.load_error}`, 'error');
                 return;
             }
 
@@ -278,7 +376,7 @@ userInput.addEventListener('keydown', (e) => {
             setText(`Local Llama: starting load… (${fmtElapsed()} elapsed)`);
         } catch (e) {
             console.error('Local Llama status error:', e);
-            setText('Local Llama: status unavailable. (Check backend.)');
+            setText('Local Llama: status unavailable. (Check backend.)', 'error');
             return;
         }
 

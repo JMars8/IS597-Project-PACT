@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 import uvicorn
@@ -13,7 +14,8 @@ import time
 # Import our financial detector
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from modules import local_llama
-from modules.pipeline_collect import collect_pipeline_inputs
+from modules.pipeline_collect import collect_pipeline_inputs, sequential_redaction_pipeline
+from modules.extract_docs import extract_text_from_file
 from modules.synthesis_prompt import (
     build_privacy_synthesis_prompt,
     extract_final_prompt,
@@ -215,6 +217,7 @@ class ChatRequest(BaseModel):
 
     query: str
     settings: ChatSettings
+    is_document: bool = False
 
 
 class BatchChatRequest(BaseModel):
@@ -229,16 +232,28 @@ class QueriesFile(BaseModel):
 def _process_chat(request: ChatRequest) -> dict:
     original_query = request.query
 
-    candidates, module_masks, financial_candidate = collect_pipeline_inputs(
-        original_query, request.settings.model_dump()
-    )
+    if request.is_document:
+        # Zero-LLM Fast Path for Documents
+        final_prompt = sequential_redaction_pipeline(original_query, request.settings.model_dump())
+        module_masks = {} 
+        candidates = [] # Define for the trace log
+        financial_candidate = None
+        llama_trace = {
+            "synthesis_mode": "zero_llm_sequential_merge",
+            "note": "Optimized for large documents. Skips Llama synthesis for speed."
+        }
+    else:
+        # Standard Llama Synthesis Path for Queries
+        candidates, module_masks, financial_candidate = collect_pipeline_inputs(
+            original_query, request.settings.model_dump()
+        )
 
-    final_prompt, llama_trace = _local_synthesize_final_prompt(
-        original_query=original_query,
-        candidates=candidates,
-        privacy_preferences=request.settings.model_dump(),
-        financial_candidate=financial_candidate,
-    )
+        final_prompt, llama_trace = _local_synthesize_final_prompt(
+            original_query=original_query,
+            candidates=candidates,
+            privacy_preferences=request.settings.model_dump(),
+            financial_candidate=financial_candidate,
+        )
 
     response_text = _cloud_llm(final_prompt)
 
@@ -307,6 +322,22 @@ def _local_synthesize_final_prompt(
             "Policy: prefer financial redacted full line, else longest candidate, else original.",
         }
         return fp, trace
+
+    # OPTIMIZATION: If we only have one candidate (one module enabled), 
+    # there is nothing to "synthesize". Return it directly to save GPU time/prevent timeouts.
+    nonempty_candidates = [c for c in candidates if isinstance(c, str) and c.strip()]
+    if len(nonempty_candidates) == 1:
+        trace = {
+            "synthesis_mode": "single_candidate_pass_through",
+            "model_name": None,
+            "synthesis_prompt": "Skipped (only 1 candidate)",
+            "raw_model_output": "",
+            "extracted_before_fallback": nonempty_candidates[0],
+            "used_fallback": False,
+            "fallback_reason": None,
+            "note": "Only one module candidate was generated; skipping Llama synthesis for efficiency."
+        }
+        return nonempty_candidates[0], trace
 
     _ensure_local_llama_ready()
 
@@ -439,8 +470,20 @@ async def chat_batch_from_file():
 async def chat_endpoint(request: ChatRequest):
     return _process_chat(request)
 
+@app.post("/extract/text")
+async def extract_text_endpoint(file: UploadFile = File(...)):
+    """
+    Extracts text from PDF/Image and returns it to the UI.
+    No redaction happens here; the user will 'Send' the text to /chat.
+    """
+    content = await file.read()
+    raw_text = extract_text_from_file(content, file.filename)
+    if not raw_text.strip():
+        raise HTTPException(status_code=400, detail="Could not extract text from document.")
+    return {"text": raw_text}
+
 # Serve frontend static files - keep this as the final route
-app.mount("/", StaticFiles(directory=os.path.join(ROOT_DIR, 'frontend'), html=True), name="frontend")
+app.mount("/", StaticFiles(directory=os.path.join(ROOT_DIR, 'frontend'), html=True), name="static")
 
 
 if __name__ == "__main__":

@@ -107,7 +107,7 @@ def generate_text(
         response = requests.post(
             url,
             json=payload,
-            timeout=120
+            timeout=600 # Increased to 10 minutes for large document synthesis
         )
         if response.status_code != 200:
             print(f"DEBUG: Ollama error {response.status_code}: {response.text}")

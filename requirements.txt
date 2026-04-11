@@ -2,4 +2,7 @@ spacy>=3.7.0
 fastapi
 uvicorn
 python-multipart
-flask-cors
+requests
+pymupdf
+pytesseract
+Pillow
