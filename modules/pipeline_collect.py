@@ -91,3 +91,32 @@ def collect_pipeline_inputs(
         candidates = [financial_candidate.strip()] if financial_candidate else [original_query]
 
     return candidates, module_masks, financial_candidate
+
+
+def sequential_redaction_pipeline(
+    text: str,
+    settings: Mapping[str, Any],
+) -> str:
+    """
+    Apply enabled modules one-by-one to the same string.
+    This is best for large documents where Llama synthesis is too slow.
+    """
+    current_text = text
+
+    # Order matters: Financial and Identity typically cover the most ground
+    if settings.get("financial"):
+        current_text, _ = _financial_detector.detect_and_redact(current_text)
+    
+    if settings.get("identity"):
+        current_text, _ = identity_module._get_detector().detect_and_redact(current_text)
+        
+    if settings.get("location"):
+        current_text, _ = modules_geo._get_detector().detect_and_redact(current_text)
+        
+    if settings.get("demographic"):
+        current_text, _ = demographic_module._get_detector().detect_and_redact(current_text)
+        
+    if settings.get("health"):
+        current_text, _ = health_module._get_detector().detect_and_redact(current_text)
+
+    return current_text
