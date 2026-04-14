@@ -74,17 +74,6 @@ def load_model(
     else:
         raise RuntimeError("Direct Transformers loading is disabled in favor of Ollama.")
 
-
-def load_au_probe(probe_path: str, layer: int = 32) -> None:
-    """Stub for backend compatibility; Ollama-only builds have no in-process probe."""
-    return
-
-
-def get_au_uncertainty(prompt: str) -> float:
-    """No probe in Ollama-only builds; backend uses this for optional gating."""
-    return 0.0
-
-
 def generate_text(
     prompt: str,
     max_new_tokens: int = 220,
