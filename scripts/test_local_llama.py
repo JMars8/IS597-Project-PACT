@@ -95,7 +95,7 @@ def case_synthesis(
     _divider("CASE: AU Uncertainty Test (Forward Pass)")
     try:
         from pathlib import Path
-        probe_path = Path(ROOT).parent / "AU-Med" / "hidden_states" / "probe_results" / "meta-llama" / "Llama-3.1-8B-Instruct" / "probe_weights" / "linearprobe_layer_32.pt"
+        probe_path = Path(ROOT) / "data" / "au_probe" / "linearprobe_layer_32.pt"
         abs_probe_path = str(probe_path.resolve())
         local_llama.load_au_probe(abs_probe_path, layer=32)
         score = local_llama.get_au_uncertainty(extracted, model_name=model_name, use_chat_template=use_chat_template)

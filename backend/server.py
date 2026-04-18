@@ -96,7 +96,7 @@ def _background_load_local_llama(model_name: str) -> None:
     global _local_llama_loading, _local_llama_load_error
     try:
         local_llama.load_model(model_name=model_name)
-        probe_path = os.path.abspath(os.path.join(ROOT_DIR, "..", "AU-Med", "hidden_states", "probe_results", "meta-llama", "Llama-3.1-8B-Instruct", "probe_weights", "linearprobe_layer_32.pt"))
+        probe_path = os.path.abspath(os.path.join(ROOT_DIR, "data", "au_probe", "linearprobe_layer_32.pt"))
         local_llama.load_au_probe(probe_path, layer=32)
         
         with _local_llama_state_lock:
@@ -249,7 +249,7 @@ def _process_chat(request: ChatRequest) -> dict:
             print(f"AU Uncertainty calculation failed: {e}")
             au_score = 0.0
 
-    if au_score >= 0.5:
+    if au_score >= 0.8:
         response_text = (
             f"The uncertainty score is {au_score:.2f}. It is likely that LLM will give you uncertain "
             f"response as well. I suggest you including more specific details or context for better answer."
@@ -262,6 +262,12 @@ def _process_chat(request: ChatRequest) -> dict:
         "candidates_for_llama": candidates,
         "privacy_preferences": request.settings.model_dump(),
         "local_llama": llama_trace,
+        "au_probe": {
+            "score": round(au_score, 4),
+            "threshold": 0.8,
+            "triggered": au_score >= 0.8,
+            "status": "uncertain" if au_score >= 0.8 else "certain",
+        },
         "final_prompt_to_gpt": final_prompt,
     }
 

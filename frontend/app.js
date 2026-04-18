@@ -155,20 +155,186 @@ function appendPipelineTrace(container, trace) {
     sum.style.fontSize = '0.8rem';
     sum.style.fontWeight = '600';
     sum.style.color = 'var(--accent-cyan, #5eead4)';
-    sum.textContent = 'Pipeline: module masks → Local Llama → GPT';
+    sum.style.display = 'flex';
+    sum.style.alignItems = 'center';
+    sum.style.gap = '10px';
 
-    const pre = document.createElement('pre');
-    pre.style.margin = '8px 0 0 0';
-    pre.style.whiteSpace = 'pre-wrap';
-    pre.style.wordBreak = 'break-word';
-    pre.style.fontSize = '0.68rem';
-    pre.style.lineHeight = '1.35';
-    pre.style.maxHeight = 'min(50vh, 420px)';
-    pre.style.overflow = 'auto';
-    pre.textContent = JSON.stringify(trace, null, 2);
+    // AU Probe badge in summary line
+    const auProbe = trace.au_probe;
+    let badgeHtml = '';
+    if (auProbe) {
+        const score = (auProbe.score * 100).toFixed(1);
+        const isUncertain = auProbe.triggered;
+        const badgeColor = isUncertain ? '#ef4444' : '#22d3ee';
+        const badgeBg   = isUncertain ? 'rgba(239,68,68,0.15)' : 'rgba(34,211,238,0.15)';
+        const icon      = isUncertain ? '⚠️' : '✅';
+        badgeHtml = `<span style="
+            background:${badgeBg};
+            color:${badgeColor};
+            border:1px solid ${badgeColor};
+            border-radius:5px;
+            padding:1px 7px;
+            font-size:0.72rem;
+            font-weight:700;
+            letter-spacing:0.02em;
+            white-space:nowrap;
+        ">${icon} AU Score: ${score}% — ${auProbe.status.toUpperCase()}</span>`;
+    }
+
+    sum.innerHTML = `<span>🔍 Pipeline: module masks → Local Llama → GPT</span>${badgeHtml}`;
+
+    const body = document.createElement('div');
+    body.style.marginTop = '10px';
+    body.style.display = 'flex';
+    body.style.flexDirection = 'column';
+    body.style.gap = '8px';
+
+    // Helper to create a section block
+    const makeSection = (title, content, color = 'rgba(255,255,255,0.06)') => {
+        const sec = document.createElement('div');
+        sec.style.borderRadius = '6px';
+        sec.style.background = color;
+        sec.style.padding = '6px 10px';
+
+        const h = document.createElement('div');
+        h.style.fontSize = '0.68rem';
+        h.style.fontWeight = '700';
+        h.style.color = 'var(--accent-cyan, #5eead4)';
+        h.style.marginBottom = '4px';
+        h.style.textTransform = 'uppercase';
+        h.style.letterSpacing = '0.05em';
+        h.textContent = title;
+
+        const pre = document.createElement('pre');
+        pre.style.margin = '0';
+        pre.style.whiteSpace = 'pre-wrap';
+        pre.style.wordBreak = 'break-word';
+        pre.style.fontSize = '0.66rem';
+        pre.style.lineHeight = '1.4';
+        pre.style.color = 'rgba(255,255,255,0.8)';
+        pre.textContent = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+
+        sec.appendChild(h);
+        sec.appendChild(pre);
+        return sec;
+    };
+
+    // AU Probe section (prominent, colored)
+    if (auProbe) {
+        const isUncertain = auProbe.triggered;
+        const sectionColor = isUncertain ? 'rgba(239,68,68,0.12)' : 'rgba(34,211,238,0.08)';
+        const scoreBar = document.createElement('div');
+        scoreBar.style.borderRadius = '6px';
+        scoreBar.style.background = sectionColor;
+        scoreBar.style.padding = '8px 10px';
+
+        const h = document.createElement('div');
+        h.style.fontSize = '0.68rem';
+        h.style.fontWeight = '700';
+        h.style.color = isUncertain ? '#ef4444' : '#22d3ee';
+        h.style.marginBottom = '6px';
+        h.style.textTransform = 'uppercase';
+        h.style.letterSpacing = '0.05em';
+        h.textContent = '🧠 AU-Probe Uncertainty';
+        scoreBar.appendChild(h);
+
+        // Score bar
+        const barWrap = document.createElement('div');
+        barWrap.style.display = 'flex';
+        barWrap.style.alignItems = 'center';
+        barWrap.style.gap = '10px';
+
+        const barTrack = document.createElement('div');
+        barTrack.style.flex = '1';
+        barTrack.style.height = '8px';
+        barTrack.style.borderRadius = '4px';
+        barTrack.style.background = 'rgba(255,255,255,0.1)';
+        barTrack.style.position = 'relative';
+        barTrack.style.overflow = 'hidden';
+
+        const barFill = document.createElement('div');
+        const scorePercent = Math.round(auProbe.score * 100);
+        barFill.style.width = `${scorePercent}%`;
+        barFill.style.height = '100%';
+        barFill.style.borderRadius = '4px';
+        barFill.style.background = isUncertain
+            ? 'linear-gradient(90deg, #f97316, #ef4444)'
+            : 'linear-gradient(90deg, #22d3ee, #6366f1)';
+        barFill.style.transition = 'width 0.4s ease';
+
+        // Threshold marker at 80%
+        const marker = document.createElement('div');
+        marker.style.position = 'absolute';
+        marker.style.left = '80%';
+        marker.style.top = '0';
+        marker.style.bottom = '0';
+        marker.style.width = '2px';
+        marker.style.background = 'rgba(255,255,255,0.4)';
+        marker.title = 'Threshold: 80%';
+
+        barTrack.appendChild(barFill);
+        barTrack.appendChild(marker);
+
+        const scoreLabel = document.createElement('span');
+        scoreLabel.style.fontSize = '0.75rem';
+        scoreLabel.style.fontWeight = '700';
+        scoreLabel.style.color = isUncertain ? '#ef4444' : '#22d3ee';
+        scoreLabel.style.minWidth = '40px';
+        scoreLabel.textContent = `${scorePercent}%`;
+
+        const thresholdLabel = document.createElement('span');
+        thresholdLabel.style.fontSize = '0.62rem';
+        thresholdLabel.style.color = 'rgba(255,255,255,0.4)';
+        thresholdLabel.textContent = `(threshold: ${Math.round(auProbe.threshold * 100)}%)`;
+
+        barWrap.appendChild(barTrack);
+        barWrap.appendChild(scoreLabel);
+        barWrap.appendChild(thresholdLabel);
+        scoreBar.appendChild(barWrap);
+        body.appendChild(scoreBar);
+    }
+
+    // Final prompt
+    if (trace.final_prompt_to_gpt) {
+        body.appendChild(makeSection('Final Prompt → GPT', trace.final_prompt_to_gpt));
+    }
+
+    // Local Llama synthesis summary
+    if (trace.local_llama) {
+        const ll = trace.local_llama;
+        const summary = `Mode: ${ll.synthesis_mode}\nOutput: ${ll.extracted_before_fallback || '—'}\nFallback: ${ll.used_fallback ? `YES (${ll.fallback_reason})` : 'No'}`;
+        body.appendChild(makeSection('🦙 Local Llama Synthesis', summary));
+    }
+
+    // Module masks (compact)
+    if (trace.module_masks) {
+        body.appendChild(makeSection('🛡️ Module Masks', trace.module_masks));
+    }
+
+    // Raw JSON (collapsible)
+    const rawDetails = document.createElement('details');
+    rawDetails.style.marginTop = '2px';
+    const rawSum = document.createElement('summary');
+    rawSum.style.fontSize = '0.62rem';
+    rawSum.style.color = 'rgba(255,255,255,0.35)';
+    rawSum.style.cursor = 'pointer';
+    rawSum.textContent = 'Raw JSON';
+    const rawPre = document.createElement('pre');
+    rawPre.style.margin = '6px 0 0 0';
+    rawPre.style.whiteSpace = 'pre-wrap';
+    rawPre.style.wordBreak = 'break-word';
+    rawPre.style.fontSize = '0.62rem';
+    rawPre.style.lineHeight = '1.35';
+    rawPre.style.maxHeight = 'min(40vh, 300px)';
+    rawPre.style.overflow = 'auto';
+    rawPre.style.color = 'rgba(255,255,255,0.5)';
+    rawPre.textContent = JSON.stringify(trace, null, 2);
+    rawDetails.appendChild(rawSum);
+    rawDetails.appendChild(rawPre);
+    body.appendChild(rawDetails);
 
     wrap.appendChild(sum);
-    wrap.appendChild(pre);
+    wrap.appendChild(body);
     container.appendChild(wrap);
 }
 
