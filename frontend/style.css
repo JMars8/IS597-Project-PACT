@@ -35,6 +35,8 @@ body {
     display: flex;
     flex-direction: column;
     gap: 2rem;
+    overflow-y: auto;
+    height: 100vh;
 }
 
 .logo-container {
@@ -228,6 +230,37 @@ textarea:focus {
 #send-btn:hover {
     background: var(--primary-hover);
     transform: translateY(-2px);
+}
+
+.input-actions {
+    max-width: 800px;
+    margin: 0.75rem auto 0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.action-btn {
+    background: rgba(255, 255, 255, 0.03) !important;
+    color: var(--accent-cyan);
+    border: 1px solid var(--glass-border);
+    padding: 0.6rem 1.2rem;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    outline: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.action-btn:hover {
+    border-color: var(--accent-cyan);
+    background: rgba(34, 211, 238, 0.08) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 @keyframes fadeIn {
