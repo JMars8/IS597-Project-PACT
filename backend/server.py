@@ -107,7 +107,8 @@ def _background_load_local_llama(model_name: str) -> None:
         with _local_llama_state_lock:
             _local_llama_load_error = f"{type(e).__name__}: {str(e)[:300]}"
             _local_llama_loading = False
-            _local_llama_ready_event.clear()
+        # Set (not clear) so _ensure_local_llama_ready unblocks and can raise the error.
+        _local_llama_ready_event.set()
 
 
 def _ensure_local_llama_ready(timeout_sec: float | None = None) -> None:

@@ -163,6 +163,28 @@ ollama list
 
 **"Model not found" error** — Run `ollama pull llama3.1:8b` and restart the backend.
 
+**Ollama Desktop app conflict** — If you have both the Ollama CLI and the Ollama Desktop app installed, only one should be running at a time. Having both active can cause port conflicts on `11434`. Open Task Manager (Windows) or Activity Monitor (macOS), and make sure only one `ollama` process is running before starting the backend. The Ollama Desktop app takes priority — if it is installed, use it and do not run `ollama serve` manually alongside it.
+
+**Backend appears to hang / no response** — This is almost always caused by Ollama not being reachable. The backend will immediately return an error (not hang) if Ollama is down. If requests still seem stuck, check that Ollama is running on the correct port (`11434`) with:
+```bash
+curl http://localhost:11434/api/tags
+```
+If this returns a list of models, Ollama is healthy. Restart the backend and try again.
+
+**Package version conflicts** — Use the exact versions in `requirements.txt`. If you already have conflicting packages installed, run:
+```bash
+pip install -r requirements.txt --force-reinstall
+```
+Python 3.10 or higher is required. Using a virtual environment is strongly recommended:
+```bash
+python -m venv venv
+# Windows:
+venv\Scripts\activate
+# macOS / Linux:
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
 **Slow first response** — The first request may take longer as Ollama loads the model into memory. Subsequent requests are faster.
 
 **OpenAI errors** — Double-check your API key in the sidebar. Ensure it has available quota.
