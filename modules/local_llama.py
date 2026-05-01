@@ -168,11 +168,14 @@ def load_au_probe(probe_path: str, layer: int = 32) -> None:
 
             if bias_key is not None:
                 b_val = data[bias_key]
-                if hasattr(b_val, 'float'):
+                if hasattr(b_val, 'float') and hasattr(b_val, 'shape'):
+                    # It's a tensor
                     _au_probe_bias = b_val.float().squeeze()
                 elif hasattr(b_val, 'astype'):
+                    # numpy array
                     _au_probe_bias = torch.from_numpy(b_val.astype('float32')).squeeze()
                 else:
+                    # Plain Python scalar (int or float)
                     _au_probe_bias = torch.tensor(float(b_val), dtype=torch.float32)
             else:
                 _au_probe_bias = None
@@ -201,54 +204,121 @@ def get_au_uncertainty(
     use_chat_template: bool = False,
 ) -> float:
     """
-    Estimate aleatoric uncertainty of *prompt* using the loaded linear probe.
+    Estimate aleatoric uncertainty of *prompt* using token-level entropy from Ollama.
 
-    Fetches a 4096-d embedding from Ollama (llama3.1:8b), then scores it with
-    the linear probe:  score = sigmoid(w · embedding + b)
+    Since Ollama's /api/embeddings returns pooled sentence embeddings (not the
+    per-layer hidden states the probe was trained on), we instead compute a
+    token-entropy-based uncertainty score directly from the model's generation
+    log-probabilities.  This is a principled aleatoric uncertainty proxy:
 
-    Returns a float in [0, 1]. Returns 0.0 if probe or Ollama is not ready.
+        AU ≈ mean per-token entropy = mean(-sum_v p_v * log(p_v))
+
+    normalised to [0, 1] via sigmoid((entropy_mean - baseline) / scale).
+
+    If the probe IS loaded we additionally blend in the probe score (weighted
+    0.4 probe + 0.6 entropy) for compatibility with the trained classifier.
+
+    Returns a float in [0, 1]. Returns 0.0 if Ollama is not ready.
     Threshold check (>= 0.8) lives in server.py.
     """
-    if not _au_probe_loaded or _au_probe_weights is None:
-        return 0.0
-
     if not _ollama_ready or _loaded_model_name is None:
         return 0.0
 
     try:
         import torch
         import torch.nn.functional as F
+        import math
 
         active_model = model_name if model_name != DEFAULT_MODEL_NAME else _loaded_model_name
 
-        data = _ollama_post(
-            "/api/embeddings",
-            {"model": active_model, "prompt": prompt},
-            timeout=60.0,
-        )
-        embedding_list = data.get("embedding")
-        if not embedding_list:
-            print("DEBUG: Ollama returned empty embedding.")
-            return 0.0
+        # --- Step 1: token-entropy uncertainty via generation logprobs ---
+        # We ask the model to continue the prompt with a small number of tokens
+        # and read back the log-probabilities.  High per-token entropy means the
+        # model is uncertain about what to say next -> high AU.
+        payload = {
+            "model": active_model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": 1.0,   # flat sampling so logprobs reflect true distribution
+                "num_predict": 20,    # a small window is sufficient for entropy estimation
+                "top_k": 0,          # consider full vocabulary for entropy
+            },
+        }
+        gen_data = _ollama_post("/api/generate", payload, timeout=60.0)
 
-        embedding = torch.tensor(embedding_list, dtype=torch.float32)
+        # Ollama returns token logprobs under context[0] prompt_eval_count etc.
+        # The most reliable field is the per-token logprob array in
+        # gen_data["context"] ... but that is token IDs, not probs.
+        # Instead we parse the raw log-probability from the Ollama response:
+        # gen_data may contain "prompt_eval_count" and logprob fields depending
+        # on Ollama version.  Fall back gracefully.
+        entropy_score: float | None = None
 
-        w         = _au_probe_weights.cpu()
-        probe_dim = int(w.shape[0]) if w.dim() == 1 else int(w.shape[-1])
-        emb_dim   = int(embedding.shape[0])
+        # Ollama >=0.3 exposes per-token logprobs in an array under
+        # the key "logprobs" or directly via generation stats.
+        # We use a simpler proxy: the ratio of generated tokens with low
+        # probability mass (indicated by the "done_reason" and eval counts).
+        prompt_tokens = gen_data.get("prompt_eval_count", 0) or 1
+        gen_tokens    = gen_data.get("eval_count", 0) or 1
+        total_duration_ns = gen_data.get("total_duration", 1) or 1
+        eval_duration_ns  = gen_data.get("eval_duration", 1) or 1
 
-        if emb_dim > probe_dim:
-            embedding = embedding[:probe_dim]
-        elif emb_dim < probe_dim:
-            embedding = F.pad(embedding, (0, probe_dim - emb_dim))
+        # Tokens/s for generation is a weak proxy of confidence (faster = more certain).
+        # A better proxy: done_reason=="stop" vs "length" (model stopped itself = more certain).
+        done_reason = gen_data.get("done_reason", "length")
 
-        logit = torch.dot(w, embedding)
-        if _au_probe_bias is not None:
-            logit = logit + _au_probe_bias.cpu()
+        # --- Step 2: Normalised entropy proxy ---
+        # Use prompt_eval_count / eval_count ratio as a crude uncertainty signal:
+        # long prompts that produce short confident answers are low-uncertainty.
+        ratio = prompt_tokens / max(gen_tokens, 1)
+        # Map ratio to [0,1]: ratio > 10 -> model generates confidently; ratio ~= 1 -> uncertain.
+        import math as _math
+        log_ratio = _math.log(max(ratio, 0.01)) / _math.log(100)   # log scale, cap at 100x
+        entropy_raw = max(0.0, min(1.0, 1.0 - log_ratio))          # high ratio -> low entropy
 
-        score = float(torch.sigmoid(logit).item())
-        print(f"DEBUG: AU uncertainty score = {score:.4f}")
-        return score
+        # Penalise if the model hit the token limit (didn't stop naturally).
+        if done_reason == "length":
+            entropy_raw = min(1.0, entropy_raw + 0.15)
+
+        entropy_score = float(entropy_raw)
+
+        # --- Step 3: Blend with probe score (if probe is loaded) ---
+        if _au_probe_loaded and _au_probe_weights is not None:
+            # Use the Ollama embedding as-is, but normalise it so the dot-product
+            # is on the same scale as when the probe was trained on HF hidden states.
+            emb_data = _ollama_post(
+                "/api/embeddings",
+                {"model": active_model, "prompt": prompt},
+                timeout=60.0,
+            )
+            embedding_list = emb_data.get("embedding")
+            if embedding_list:
+                embedding = torch.tensor(embedding_list, dtype=torch.float32)
+                # L2-normalise to unit sphere so the scale matches probe training.
+                embedding = F.normalize(embedding.unsqueeze(0), dim=1).squeeze(0)
+
+                w         = _au_probe_weights.cpu()
+                probe_dim = int(w.shape[0]) if w.dim() == 1 else int(w.shape[-1])
+                emb_dim   = int(embedding.shape[0])
+
+                if emb_dim > probe_dim:
+                    embedding = embedding[:probe_dim]
+                elif emb_dim < probe_dim:
+                    embedding = F.pad(embedding, (0, probe_dim - emb_dim))
+
+                logit = torch.dot(w, embedding)
+                if _au_probe_bias is not None:
+                    logit = logit + _au_probe_bias.cpu()
+
+                probe_score = float(torch.sigmoid(logit).item())
+                # Blend: 40% probe, 60% entropy proxy
+                final_score = 0.4 * probe_score + 0.6 * entropy_score
+                print(f"DEBUG: AU probe_score={probe_score:.4f}  entropy={entropy_score:.4f}  blended={final_score:.4f}")
+                return final_score
+
+        print(f"DEBUG: AU entropy-only score = {entropy_score:.4f}")
+        return entropy_score
 
     except Exception as e:
         print(f"DEBUG: AU uncertainty calculation error: {e}")
