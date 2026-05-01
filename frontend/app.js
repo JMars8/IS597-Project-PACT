@@ -10,6 +10,7 @@ const removeAttachmentBtn = document.getElementById('remove-attachment');
 const apiKeyInput = document.getElementById('api-key-input');
 const testKeyBtn = document.getElementById('test-key-btn');
 const keyStatus = document.getElementById('key-status');
+const auThresholdSelect = document.getElementById('au-threshold-select');
 
 // Load saved API key from session storage
 if (apiKeyInput) {
@@ -71,10 +72,13 @@ async function sendMessage() {
             userApiKey = sessionStorage.getItem('pact_openai_key');
         }
         
+        const auThreshold = auThresholdSelect ? parseFloat(auThresholdSelect.value) : 0.8;
+
         const payload = {
             query: fullQuery,
             is_document: !!currentAttachmentText,
             api_key: userApiKey,
+            au_threshold: auThreshold,
             settings: {
                 identity: toggles.identity.checked,
                 location: toggles.location.checked,
@@ -262,15 +266,16 @@ function appendPipelineTrace(container, trace) {
             : 'linear-gradient(90deg, #22d3ee, #6366f1)';
         barFill.style.transition = 'width 0.4s ease';
 
-        // Threshold marker at 80%
+        // Threshold marker at dynamic threshold %
+        const thresholdPct = Math.round((auProbe.threshold || 0.8) * 100);
         const marker = document.createElement('div');
         marker.style.position = 'absolute';
-        marker.style.left = '80%';
+        marker.style.left = `${thresholdPct}%`;
         marker.style.top = '0';
         marker.style.bottom = '0';
         marker.style.width = '2px';
         marker.style.background = 'rgba(255,255,255,0.4)';
-        marker.title = 'Threshold: 80%';
+        marker.title = `Threshold: ${thresholdPct}%`;
 
         barTrack.appendChild(barFill);
         barTrack.appendChild(marker);
