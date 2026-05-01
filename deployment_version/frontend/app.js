@@ -90,7 +90,7 @@ async function sendMessage() {
             api_key_length: payload.api_key ? payload.api_key.length : 0
         });
 
-        const response = await fetch('http://localhost:8000/chat', {
+        const response = await fetch(BACKEND_URL + '/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -384,7 +384,7 @@ async function runBatchFromFile() {
             userApiKey = sessionStorage.getItem('pact_openai_key');
         }
 
-        const response = await fetch('http://localhost:8000/chat/batch-from-file', {
+        const response = await fetch(BACKEND_URL + '/chat/batch-from-file', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ queries: [], api_key: userApiKey })
@@ -492,7 +492,7 @@ fileInput.addEventListener('change', async (e) => {
     formData.append('file', file);
 
     try {
-        const response = await fetch('http://localhost:8000/extract/text', {
+        const response = await fetch(BACKEND_URL + '/extract/text', {
             method: 'POST',
             body: formData
         });
@@ -586,7 +586,7 @@ userInput.addEventListener('keydown', (e) => {
 
     while (Date.now() < LOAD_DEADLINE_MS) {
         try {
-            const statusResp = await fetch('http://localhost:8000/local-llama/status');
+            const statusResp = await fetch(BACKEND_URL + '/local-llama/status');
             const st = await statusResp.json().catch(() => ({}));
 
             if (st.loaded) {
@@ -608,7 +608,7 @@ userInput.addEventListener('keydown', (e) => {
             }
 
             // Not loaded and not currently loading -> kick off loading.
-            await fetch('http://localhost:8000/local-llama/load', {
+            await fetch(BACKEND_URL + '/local-llama/load', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({}),

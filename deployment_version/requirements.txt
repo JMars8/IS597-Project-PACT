@@ -5,7 +5,7 @@ python-multipart==0.0.26
 requests==2.33.0
 pymupdf==1.27.2.2
 pydantic==2.12.5
-torch==2.11.0
+groq==0.13.1
 pytesseract
 Pillow
 python-dotenv
