@@ -255,33 +255,47 @@ def get_au_uncertainty(
         # on Ollama version.  Fall back gracefully.
         entropy_score: float | None = None
 
-        # Ollama >=0.3 exposes per-token logprobs in an array under
-        # the key "logprobs" or directly via generation stats.
-        # We use a simpler proxy: the ratio of generated tokens with low
-        # probability mass (indicated by the "done_reason" and eval counts).
-        prompt_tokens = gen_data.get("prompt_eval_count", 0) or 1
-        gen_tokens    = gen_data.get("eval_count", 0) or 1
-        total_duration_ns = gen_data.get("total_duration", 1) or 1
-        eval_duration_ns  = gen_data.get("eval_duration", 1) or 1
+        # Ollama >=0.3 can return prompt/eval token counts, but older/newer
+        # variants may omit them. Use robust fallbacks so entropy does not
+        # collapse to a constant when fields are missing.
+        prompt_word_count = max(1, len(prompt.split()))
+        response_text = (gen_data.get("response") or "").strip()
+
+        prompt_tokens = int(gen_data.get("prompt_eval_count") or 0)
+        gen_tokens = int(gen_data.get("eval_count") or 0)
+
+        if prompt_tokens <= 0:
+            # Rough token approximation from words.
+            prompt_tokens = max(1, int(prompt_word_count * 1.3))
+        if gen_tokens <= 0:
+            # Use generated response length as fallback.
+            gen_tokens = max(1, int(max(1, len(response_text.split())) * 1.3))
 
         # Tokens/s for generation is a weak proxy of confidence (faster = more certain).
         # A better proxy: done_reason=="stop" vs "length" (model stopped itself = more certain).
         done_reason = gen_data.get("done_reason", "length")
 
         # --- Step 2: Normalised entropy proxy ---
-        # Use prompt_eval_count / eval_count ratio as a crude uncertainty signal:
-        # long prompts that produce short confident answers are low-uncertainty.
+        # Build a stable ambiguity proxy from:
+        # 1) prompt/generation token ratio, 2) prompt length, 3) redaction markers.
         ratio = prompt_tokens / max(gen_tokens, 1)
-        # Map ratio to [0,1]: ratio > 10 -> model generates confidently; ratio ~= 1 -> uncertain.
-        import math as _math
-        log_ratio = _math.log(max(ratio, 0.01)) / _math.log(100)   # log scale, cap at 100x
-        entropy_raw = max(0.0, min(1.0, 1.0 - log_ratio))          # high ratio -> low entropy
+        ratio_uncertainty = 1.0 / (1.0 + math.exp((ratio - 2.2) / 0.9))
+        short_prompt_uncertainty = 1.0 / (1.0 + math.exp((prompt_word_count - 14.0) / 4.0))
+        redacted_count = prompt.upper().count("[REDACTED")
+        redacted_ratio = redacted_count / max(prompt_word_count, 1)
+        redaction_uncertainty = 1.0 / (1.0 + math.exp(-(redacted_ratio - 0.22) * 10.0))
 
-        # Penalise if the model hit the token limit (didn't stop naturally).
+        entropy_raw = (
+            0.5 * ratio_uncertainty
+            + 0.3 * short_prompt_uncertainty
+            + 0.2 * redaction_uncertainty
+        )
+
+        # Mildly penalize if generation ended by token limit.
         if done_reason == "length":
-            entropy_raw = min(1.0, entropy_raw + 0.15)
+            entropy_raw += 0.08
 
-        entropy_score = float(entropy_raw)
+        entropy_score = float(max(0.0, min(1.0, entropy_raw)))
 
         # --- Step 3: Blend with probe score (if probe is loaded) ---
         if _au_probe_loaded and _au_probe_weights is not None:
@@ -312,8 +326,8 @@ def get_au_uncertainty(
                     logit = logit + _au_probe_bias.cpu()
 
                 probe_score = float(torch.sigmoid(logit).item())
-                # Blend: 40% probe, 60% entropy proxy
-                final_score = 0.4 * probe_score + 0.6 * entropy_score
+                # Blend: keep probe signal, but let ambiguity proxy drive variation.
+                final_score = 0.45 * probe_score + 0.55 * entropy_score
                 print(f"DEBUG: AU probe_score={probe_score:.4f}  entropy={entropy_score:.4f}  blended={final_score:.4f}")
                 return final_score
 
